@@ -28,11 +28,6 @@ func InitConfigLogger() error {
 
 	log.SetFormatter(&log.TextFormatter{FullTimestamp: viper.GetBool("log.showFullTime")})
 
-	if viper.GetBool("log.reportCaller") {
-		log.Info("log: enable report caller")
-		log.SetReportCaller(true)
-	}
-
 	loglevel := viper.GetString("log.level")
 	log.Infof("log level: %s", loglevel)
 	logrus.SetLevel(convertLevel(loglevel))
@@ -45,10 +40,14 @@ func InitConfigLogger() error {
 			log.WithFields(log.Fields{"logfile": logfilePath, "error": err.Error()}).Fatal("Open logfile error")
 		}
 		log.Infof("logfile path: %s", logfilePath)
-
 		output = io.MultiWriter(os.Stderr, handler)
 	} else {
 		output = os.Stderr
+	}
+
+	if viper.GetBool("log.reportCaller") {
+		log.Info("log: enable report caller")
+		log.SetReportCaller(true)
 	}
 
 	log.SetOutput(output)
