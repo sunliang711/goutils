@@ -40,7 +40,7 @@ func InitConfigLogger() error {
 			log.WithFields(log.Fields{"logfile": logfilePath, "error": err.Error()}).Fatal("Open logfile error")
 		}
 		log.Infof("logfile path: %s", logfilePath)
-		output = io.MultiWriter(os.Stderr, handler)
+		output = handler
 	} else {
 		output = os.Stderr
 	}
