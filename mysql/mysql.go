@@ -4,6 +4,8 @@ import (
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
 
 // New connect mysql 'dsn',
@@ -22,4 +24,10 @@ func New(dsn string, maxIdleConns, maxOpenConns int) (*sql.DB, error) {
 	db.SetMaxIdleConns(maxIdleConns)
 	db.SetMaxOpenConns(maxOpenConns)
 	return db, nil
+}
+
+// New ORM connection
+// pass 'parseTime=true when use gorm.Model'
+func NewORM(dsn string) (*gorm.DB, error) {
+	return gorm.Open("mysql", dsn)
 }
