@@ -1,4 +1,4 @@
-package zrlog
+package log
 
 import (
 	"fmt"
