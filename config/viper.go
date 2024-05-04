@@ -9,7 +9,7 @@ import (
 var Viper *viper.Viper
 
 func init() {
-	Viper, _ = NewViper("")
+	Viper, _ = NewViper("APP")
 }
 
 // NewViper create an instance of viper.Viper from file [./config.(yaml|json|toml)] and env var
