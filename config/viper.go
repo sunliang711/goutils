@@ -6,12 +6,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-var Viper *viper.Viper
-
-func init() {
-	Viper, _ = NewViper("APP")
-}
-
 // NewViper create an instance of viper.Viper from file [./config.(yaml|json|toml)] and env var
 // envPrefix: setup env when not empty
 func NewViper(envPrefix string) (*viper.Viper, error) {
