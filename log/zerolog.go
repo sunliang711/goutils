@@ -12,14 +12,25 @@ import (
 )
 
 var (
-	Logger        *zerolog.Logger
-	ConsoleLogger *zerolog.Logger
+	defaultLogger *zerolog.Logger
+
+	jsonLogger    *zerolog.Logger
+	consoleLogger *zerolog.Logger
 )
 
 func init() {
-	Logger, _ = NewLogger(os.Stdout, "trace", true, true)
+	jsonLogger, _ = NewLogger(os.Stdout, "trace", true, true)
+	consoleLogger, _ = NewConsoleLogger("trace", true, true)
 
-	ConsoleLogger, _ = NewConsoleLogger("trace", true, true)
+	defaultLogger = jsonLogger
+}
+
+func UseJsonLog() {
+	defaultLogger = jsonLogger
+}
+
+func UseConsoleLog() {
+	defaultLogger = consoleLogger
 }
 
 // SetLoglevel sets zerolog global logger level
@@ -118,4 +129,36 @@ func NewLogger(writer io.Writer, level string, withTimestamp, withCaller bool, p
 func NewConsoleLogger(level string, withTimestamp, withCaller bool, pairs ...Pair) (*zerolog.Logger, error) {
 	consoleWriter := NewConsoleWriter(withTimestamp, withCaller)
 	return NewLogger(consoleWriter, level, withTimestamp, withCaller, pairs...)
+}
+
+func Trace() *zerolog.Event {
+	return defaultLogger.Trace()
+}
+
+func Debug() *zerolog.Event {
+	return defaultLogger.Debug()
+}
+
+func Info() *zerolog.Event {
+	return defaultLogger.Info()
+}
+
+func Warn() *zerolog.Event {
+	return defaultLogger.Warn()
+}
+
+func Error() *zerolog.Event {
+	return defaultLogger.Error()
+}
+
+func Err(err error) *zerolog.Event {
+	return defaultLogger.Err(err)
+}
+
+func Fatal() *zerolog.Event {
+	return defaultLogger.Fatal()
+}
+
+func Panic() *zerolog.Event {
+	return defaultLogger.Panic()
 }
