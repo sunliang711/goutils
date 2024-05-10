@@ -7,28 +7,43 @@ import (
 	"google.golang.org/grpc"
 )
 
-type GrpcService struct {
+type Service struct {
 	Desc *grpc.ServiceDesc
 	Ss   any
 }
 
-type GrpcServer struct {
-	port   int
+type Server struct {
+	options Options
+
 	server *grpc.Server
-	opts   []grpc.ServerOption
+	// opts   []grpc.ServerOption
 }
 
-func NewServer(port int, opts ...grpc.ServerOption) *GrpcServer {
-	return &GrpcServer{port: port, opts: opts}
+func (d *Server) Init(opts ...Option) {
+	for _, o := range opts {
+		o(&d.options)
+	}
 }
 
-func (srv *GrpcServer) Start(services []GrpcService) error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", srv.port))
+func New(opts ...Option) *Server {
+	options := Options{
+		host: "",
+		port: 9090,
+	}
+
+	srv := &Server{options: options}
+	srv.Init(opts...)
+
+	return srv
+}
+
+func (srv *Server) Start(services []Service, opts ...grpc.ServerOption) error {
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", srv.options.host, srv.options.port))
 	if err != nil {
 		return err
 	}
 
-	server := grpc.NewServer(srv.opts...)
+	server := grpc.NewServer(opts...)
 	for i := range services {
 		server.RegisterService(services[i].Desc, services[i].Ss)
 	}
@@ -40,8 +55,9 @@ func (srv *GrpcServer) Start(services []GrpcService) error {
 	}
 
 	return nil
+
 }
 
-func (srv *GrpcServer) Close() {
+func (srv *Server) Close() {
 	srv.server.Stop()
 }
