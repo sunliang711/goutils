@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/camunda/zeebe/clients/go/v8/pkg/commands"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/pb"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
@@ -51,8 +52,15 @@ func (cli *CamundaClient) DeployProcess(ctx context.Context, name string, proces
 	return process, nil
 }
 
-func (cli *CamundaClient) StartProcessInstance(ctx context.Context, processId string, vars map[string]any) (*pb.CreateProcessInstanceResponse, error) {
-	command, err := cli.client.NewCreateInstanceCommand().BPMNProcessId(processId).LatestVersion().VariablesFromMap(vars)
+func (cli *CamundaClient) StartProcessInstance(ctx context.Context, processId string, version int32, vars map[string]any) (*pb.CreateProcessInstanceResponse, error) {
+	var step3 commands.CreateInstanceCommandStep3
+	step2 := cli.client.NewCreateInstanceCommand().BPMNProcessId(processId)
+	if version < 1 {
+		step3 = step2.LatestVersion()
+	} else {
+		step3 = step2.Version(version)
+	}
+	command, err := step3.VariablesFromMap(vars)
 	if err != nil {
 		return nil, err
 	}
