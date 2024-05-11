@@ -13,7 +13,7 @@ var (
 )
 
 func init() {
-	defaultLogger = New()
+	defaultLogger = New(WithLevel("trace"))
 }
 
 type Option func(*options)
