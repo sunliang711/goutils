@@ -26,9 +26,24 @@ type options struct {
 	pairs     []Pair
 }
 
+func correctLevel(level string) string {
+	switch level {
+	case "trace":
+	case "debug":
+	case "info":
+	case "warn":
+	case "error":
+	case "fatal":
+	default:
+		return "error"
+	}
+	return level
+}
+
 func WithLevel(level string) Option {
 	return func(o *options) {
-		o.level = level
+		lvl := correctLevel(level)
+		o.level = lvl
 	}
 }
 
