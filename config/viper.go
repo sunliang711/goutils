@@ -82,3 +82,23 @@ func New(option ...Option) (*Config, error) {
 	}, nil
 
 }
+
+func (c *Config) Get(key string) any {
+	return c.vp.Get(key)
+}
+
+func (c *Config) GetBool(key string) bool {
+	return c.vp.GetBool(key)
+}
+
+func (c *Config) GetInt(key string) int {
+	return c.vp.GetInt(key)
+}
+
+func (c *Config) GetFloat64(key string) float64 {
+	return c.vp.GetFloat64(key)
+}
+
+func (c *Config) GetString(key string) string {
+	return c.vp.GetString(key)
+}
