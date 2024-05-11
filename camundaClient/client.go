@@ -12,7 +12,7 @@ import (
 )
 
 type CamundaClient struct {
-	client zbc.Client
+	Client zbc.Client
 }
 
 func New(gateway string) (*CamundaClient, error) {
@@ -23,16 +23,16 @@ func New(gateway string) (*CamundaClient, error) {
 	}
 
 	return &CamundaClient{
-		client: client,
+		Client: client,
 	}, nil
 }
 
 func (cli *CamundaClient) Close() error {
-	return cli.client.Close()
+	return cli.Client.Close()
 }
 
 func (cli *CamundaClient) DeployProcess(ctx context.Context, name string, processDefinition []byte) (*pb.ProcessMetadata, error) {
-	command := cli.client.NewDeployResourceCommand().AddResource(processDefinition, name)
+	command := cli.Client.NewDeployResourceCommand().AddResource(processDefinition, name)
 
 	resource, err := command.Send(ctx)
 	if err != nil {
@@ -54,7 +54,7 @@ func (cli *CamundaClient) DeployProcess(ctx context.Context, name string, proces
 
 func (cli *CamundaClient) StartProcessInstance(ctx context.Context, processId string, version int32, vars map[string]any) (*pb.CreateProcessInstanceResponse, error) {
 	var step3 commands.CreateInstanceCommandStep3
-	step2 := cli.client.NewCreateInstanceCommand().BPMNProcessId(processId)
+	step2 := cli.Client.NewCreateInstanceCommand().BPMNProcessId(processId)
 	if version < 1 {
 		step3 = step2.LatestVersion()
 	} else {
@@ -74,6 +74,6 @@ func (cli *CamundaClient) StartProcessInstance(ctx context.Context, processId st
 }
 
 func (cli *CamundaClient) StartWorker(jobType, workerName string, jobHandler worker.JobHandler, concurrency, maxJobsActive int, timeout, pollInterval time.Duration) worker.JobWorker {
-	worker := cli.client.NewJobWorker().JobType(jobType).Handler(jobHandler).Concurrency(concurrency).MaxJobsActive(maxJobsActive).RequestTimeout(timeout).PollInterval(pollInterval).Name(workerName).Open()
+	worker := cli.Client.NewJobWorker().JobType(jobType).Handler(jobHandler).Concurrency(concurrency).MaxJobsActive(maxJobsActive).RequestTimeout(timeout).PollInterval(pollInterval).Name(workerName).Open()
 	return worker
 }
