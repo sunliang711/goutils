@@ -11,27 +11,27 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var (
-	defaultLogger *zerolog.Logger
+// var (
+// 	defaultLogger *zerolog.Logger
 
-	jsonLogger    *zerolog.Logger
-	consoleLogger *zerolog.Logger
-)
+// 	jsonLogger    *zerolog.Logger
+// 	consoleLogger *zerolog.Logger
+// )
 
-func init() {
-	jsonLogger, _ = NewLogger(os.Stdout, "trace", true, true)
-	consoleLogger, _ = NewConsoleLogger("trace", true, true)
+// func init() {
+// 	jsonLogger = NewLogger(os.Stdout, "trace", true, true)
+// 	consoleLogger = NewConsoleLogger("trace", true, true)
 
-	defaultLogger = jsonLogger
-}
+// 	defaultLogger = jsonLogger
+// }
 
-func UseJsonLog() {
-	defaultLogger = jsonLogger
-}
+// func UseJsonLog() {
+// 	defaultLogger = jsonLogger
+// }
 
-func UseConsoleLog() {
-	defaultLogger = consoleLogger
-}
+// func UseConsoleLog() {
+// 	defaultLogger = consoleLogger
+// }
 
 // SetLoglevel sets zerolog global logger level
 // available level:
@@ -105,11 +105,12 @@ type Pair struct {
 	Value string
 }
 
-func NewLogger(writer io.Writer, level string, withTimestamp, withCaller bool, pairs ...Pair) (*zerolog.Logger, error) {
+func NewLogger(writer io.Writer, level string, withTimestamp, withCaller bool, pairs ...Pair) *zerolog.Logger {
 	loglevel, err := zerolog.ParseLevel(level)
 	if err != nil {
-		return nil, err
+		loglevel = zerolog.ErrorLevel
 	}
+
 	loggerContext := zerolog.New(writer).Level(loglevel).With()
 	if withTimestamp {
 		loggerContext = loggerContext.Timestamp()
@@ -123,42 +124,42 @@ func NewLogger(writer io.Writer, level string, withTimestamp, withCaller bool, p
 	}
 
 	logger := loggerContext.Logger()
-	return &logger, nil
+	return &logger
 }
 
-func NewConsoleLogger(level string, withTimestamp, withCaller bool, pairs ...Pair) (*zerolog.Logger, error) {
+func NewConsoleLogger(level string, withTimestamp, withCaller bool, pairs ...Pair) *zerolog.Logger {
 	consoleWriter := NewConsoleWriter(withTimestamp, withCaller)
 	return NewLogger(consoleWriter, level, withTimestamp, withCaller, pairs...)
 }
 
-func Trace() *zerolog.Event {
-	return defaultLogger.Trace()
-}
+// func Trace() *zerolog.Event {
+// 	return defaultLogger.Trace()
+// }
 
-func Debug() *zerolog.Event {
-	return defaultLogger.Debug()
-}
+// func Debug() *zerolog.Event {
+// 	return defaultLogger.Debug()
+// }
 
-func Info() *zerolog.Event {
-	return defaultLogger.Info()
-}
+// func Info() *zerolog.Event {
+// 	return defaultLogger.Info()
+// }
 
-func Warn() *zerolog.Event {
-	return defaultLogger.Warn()
-}
+// func Warn() *zerolog.Event {
+// 	return defaultLogger.Warn()
+// }
 
-func Error() *zerolog.Event {
-	return defaultLogger.Error()
-}
+// func Error() *zerolog.Event {
+// 	return defaultLogger.Error()
+// }
 
-func Err(err error) *zerolog.Event {
-	return defaultLogger.Err(err)
-}
+// func Err(err error) *zerolog.Event {
+// 	return defaultLogger.Err(err)
+// }
 
-func Fatal() *zerolog.Event {
-	return defaultLogger.Fatal()
-}
+// func Fatal() *zerolog.Event {
+// 	return defaultLogger.Fatal()
+// }
 
-func Panic() *zerolog.Event {
-	return defaultLogger.Panic()
-}
+// func Panic() *zerolog.Event {
+// 	return defaultLogger.Panic()
+// }
