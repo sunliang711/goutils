@@ -9,11 +9,11 @@ import (
 )
 
 var (
-	DefaultLogger *Logger
+	defaultLogger *Logger
 )
 
 func init() {
-	DefaultLogger = New()
+	defaultLogger = New()
 }
 
 type Option func(*options)
@@ -174,4 +174,32 @@ func (l *Logger) Panic(format string, v ...any) {
 	}
 
 	evt.Msgf(format, v...)
+}
+
+func Trace(format string, v ...any) {
+	defaultLogger.Trace(format, v...)
+}
+
+func Debug(format string, v ...any) {
+	defaultLogger.Debug(format, v...)
+}
+
+func Info(format string, v ...any) {
+	defaultLogger.Info(format, v...)
+}
+
+func Warn(format string, v ...any) {
+	defaultLogger.Warn(format, v...)
+}
+
+func Error(format string, v ...any) {
+	defaultLogger.Error(format, v...)
+}
+
+func Fatal(format string, v ...any) {
+	defaultLogger.Fatal(format, v...)
+}
+
+func Panic(format string, v ...any) {
+	defaultLogger.Panic(format, v...)
 }
