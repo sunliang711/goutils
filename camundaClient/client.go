@@ -73,7 +73,54 @@ func (cli *CamundaClient) StartProcessInstance(ctx context.Context, processId st
 	return process, nil
 }
 
-func (cli *CamundaClient) StartWorker(jobType, workerName string, jobHandler worker.JobHandler, concurrency, maxJobsActive int, timeout, pollInterval time.Duration) worker.JobWorker {
-	worker := cli.Client.NewJobWorker().JobType(jobType).Handler(jobHandler).Concurrency(concurrency).MaxJobsActive(maxJobsActive).RequestTimeout(timeout).PollInterval(pollInterval).Name(workerName).Open()
+type Option func(*startOptions)
+
+type startOptions struct {
+	concurrency   int
+	maxJobActives int
+	timeout       time.Duration
+	pollInternal  time.Duration
+}
+
+func defaultStartOptions() startOptions {
+	return startOptions{
+		concurrency:   2,
+		maxJobActives: 2,
+		timeout:       time.Second * 10,
+		pollInternal:  time.Second * 10,
+	}
+}
+
+func WithConcurrency(concurrency int) Option {
+	return func(so *startOptions) {
+		so.concurrency = concurrency
+	}
+}
+
+func WithMaxJobsActive(m int) Option {
+	return func(so *startOptions) {
+		so.maxJobActives = m
+	}
+}
+
+func WithTimeout(t time.Duration) Option {
+	return func(so *startOptions) {
+		so.timeout = t
+	}
+}
+
+func WithPoolInterval(t time.Duration) Option {
+	return func(so *startOptions) {
+		so.pollInternal = t
+	}
+}
+
+func (cli *CamundaClient) StartWorker(jobType, workerName string, jobHandler worker.JobHandler, opts ...Option) worker.JobWorker {
+	so := defaultStartOptions()
+	for _, o := range opts {
+		o(&so)
+	}
+
+	worker := cli.Client.NewJobWorker().JobType(jobType).Handler(jobHandler).Concurrency(so.concurrency).MaxJobsActive(so.maxJobActives).RequestTimeout(so.timeout).PollInterval(so.pollInternal).Name(workerName).Open()
 	return worker
 }
