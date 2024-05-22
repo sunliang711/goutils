@@ -9,6 +9,7 @@ import (
 	"github.com/camunda/zeebe/clients/go/v8/pkg/pb"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
+	"google.golang.org/grpc"
 )
 
 type CamundaClient struct {
@@ -16,7 +17,11 @@ type CamundaClient struct {
 }
 
 func New(gateway string) (*CamundaClient, error) {
-	config := zbc.ClientConfig{UsePlaintextConnection: true, GatewayAddress: gateway}
+	config := zbc.ClientConfig{
+		UsePlaintextConnection: true,
+		GatewayAddress:         gateway,
+		DialOpts:               []grpc.DialOption{grpc.WithBlock(), grpc.WithTimeout(5 * time.Second)},
+	}
 	client, err := zbc.NewClient(&config)
 	if err != nil {
 		return nil, fmt.Errorf("connect to camunda server error: %w", err)
