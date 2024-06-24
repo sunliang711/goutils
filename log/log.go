@@ -106,6 +106,13 @@ func (l *Logger) Ctx(ctx context.Context) *Logger {
 	return l
 }
 
+func (l *Logger) With(key, val string) *Logger {
+	newZLogger := l.logger.With().Str(key, val).Logger()
+	newLogger := *l
+	newLogger.logger = &newZLogger
+	return &newLogger
+}
+
 func (l *Logger) Trace(format string, v ...any) {
 	evt := l.logger.Trace()
 
