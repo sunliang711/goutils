@@ -1,7 +1,6 @@
 package rabbitmq
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -20,15 +19,7 @@ func TestMQ(t *testing.T) {
 		ConsumeExchanges: map[string]ExchangeConfig{
 			"exchange001": {
 				Type: "topic",
-				Handler: func(ctx context.Context, msgs <-chan amqp091.Delivery) {
-					for {
-						select {
-						case msg := <-msgs:
-							log.Printf("Received message: %s\n", msg.Body)
-						case <-ctx.Done():
-							return
-						}
-					}
+				Handler: func(msg amqp091.Delivery) {
 				},
 				Topics: []string{"topic1", "topic2"},
 			},

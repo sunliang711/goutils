@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rabbitmq/amqp091-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -21,12 +22,29 @@ type Config struct {
 }
 
 // context.Context用于取消操作
-type MessageHandler func(context.Context, <-chan amqp.Delivery)
+// type MessageHandler func(context.Context, <-chan amqp.Delivery)
+
+type MessageHandlerFunc func(msg amqp.Delivery)
+
+func messageHandler(ctx context.Context, msgs <-chan amqp091.Delivery, handler MessageHandlerFunc) {
+	for {
+		select {
+		case msg, ok := <-msgs:
+			if !ok {
+				log.Printf("Channel closed\n")
+				return
+			}
+			handler(msg)
+		case <-ctx.Done():
+			log.Printf("done,quit")
+			return
+		}
+	}
+}
 
 type ExchangeConfig struct {
-	Type    string         //  "topic|direct" "fanout" // TODO: topics must be empty when fanout
-	Handler MessageHandler // 消息处理handler
-	// cancelFunc context.CancelFunc
+	Type    string             //  "topic|direct" "fanout" // TODO: topics must be empty when fanout
+	Handler MessageHandlerFunc // 消息处理handler
 
 	Topics []string // type为topic|direct时的topics
 }
@@ -35,35 +53,59 @@ type RabbitMQ struct {
 	config       Config
 	conn         *amqp.Connection
 	ch           *amqp.Channel
-	closeCh      chan struct{}
 	wg           sync.WaitGroup
 	reconnectMux sync.Mutex
 	consumeMux   sync.Mutex
 
-	cancelFunc context.CancelFunc
-
 	logger *log.Logger
-	ctx    context.Context
+
+	ctx        context.Context
+	cancelFunc context.CancelFunc
 }
 
-func NewRabbitMQ(config Config) (*RabbitMQ, error) {
+func NewRabbitMQ(url string, reconnect int) (*RabbitMQ, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &RabbitMQ{
-		config:     config,
-		closeCh:    make(chan struct{}),
+		config: Config{
+			URL:              url,
+			ReconnectSec:     reconnect,
+			ConsumeExchanges: make(map[string]ExchangeConfig),
+			ProduceExchanges: make(map[string]ExchangeConfig),
+		},
+		// closeCh:    make(chan struct{}),
 		logger:     log.New(os.Stdout, "|RMQ| ", log.LstdFlags),
 		ctx:        ctx,
 		cancelFunc: cancel,
 	}
 
-	err := r.connect()
-	if err != nil {
-		return nil, err
-	}
 	return r, nil
 }
 
-func (r *RabbitMQ) connect() error {
+func (r *RabbitMQ) AddConsumer(exchangeName string, typ string, topics []string, handler MessageHandlerFunc) error {
+	exchange := ExchangeConfig{
+		Type:    typ,
+		Handler: handler,
+		Topics:  topics,
+	}
+	if exchange.Handler == nil {
+		return fmt.Errorf("exchange %s handler is nil", exchangeName)
+	}
+
+	r.config.ConsumeExchanges[exchangeName] = exchange
+	return nil
+}
+
+func (r *RabbitMQ) AddProducer(exchangeName string, typ string, topics []string) error {
+	exchange := ExchangeConfig{
+		Type:   typ,
+		Topics: topics,
+	}
+
+	r.config.ProduceExchanges[exchangeName] = exchange
+	return nil
+}
+
+func (r *RabbitMQ) Connect() error {
 	r.reconnectMux.Lock()
 	defer r.reconnectMux.Unlock()
 
@@ -98,16 +140,16 @@ func (r *RabbitMQ) connect() error {
 	}
 
 	// 声明consume exchange
-	for name, exchange := range r.config.ConsumeExchanges {
+	for name, config := range r.config.ConsumeExchanges {
 		r.logger.Printf("Declare exchange: %s\n", name)
 		err = r.ch.ExchangeDeclare(
-			name,          // name
-			exchange.Type, // type
-			true,          // durable
-			false,         // auto-deleted
-			false,         // internal
-			false,         // no-wait
-			nil,           // arguments
+			name,        // name
+			config.Type, // type
+			true,        // durable
+			false,       // auto-deleted
+			false,       // internal
+			false,       // no-wait
+			nil,         // arguments
 		)
 		if err != nil {
 			return err
@@ -118,15 +160,12 @@ func (r *RabbitMQ) connect() error {
 
 	// 遍历consume exchange, 声明queue并绑定exchange
 	for name, exchange := range r.config.ConsumeExchanges {
-		if exchange.Handler == nil {
-			return fmt.Errorf("exchange %s handler is nil", name)
-		}
 		queue := fmt.Sprintf("queue_%s", name)
-		ch, err := r.Consume(r.ctx, name, queue, exchange.Topics)
+		ch, err := r.consume(r.ctx, name, queue, exchange.Topics)
 		if err != nil {
 			return err
 		}
-		go exchange.Handler(r.ctx, ch)
+		go messageHandler(r.ctx, ch, exchange.Handler)
 	}
 
 	return nil
@@ -135,7 +174,7 @@ func (r *RabbitMQ) connect() error {
 func (r *RabbitMQ) reconnect() {
 	for {
 		r.logger.Println("Attempting to reconnect...")
-		err := r.connect()
+		err := r.Connect()
 		if err == nil {
 			r.logger.Println("Reconnected to RabbitMQ")
 			return
@@ -174,7 +213,7 @@ func (r *RabbitMQ) Publish(exchange, routingKey string, body []byte) error {
 	)
 }
 
-func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topics []string) (<-chan amqp.Delivery, error) {
+func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topics []string) (<-chan amqp.Delivery, error) {
 	r.consumeMux.Lock()
 	defer r.consumeMux.Unlock()
 
@@ -228,7 +267,7 @@ func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topi
 	msgs, err := r.ch.Consume(
 		queue.Name, // queue
 		"",         // consumer
-		true,       // auto-ack
+		false,      // auto-ack
 		false,      // exclusive
 		false,      // no-local
 		false,      // no-wait
