@@ -12,14 +12,23 @@ import (
 )
 
 type Config struct {
-	URL          string
-	Exchanges    map[string]ExchangeConfig
-	ReconnectSec int
+	URL string
+	// Exchanges        map[string]ExchangeConfig
+	ReconnectSec int // 重连间隔
+
+	ProduceExchanges map[string]ExchangeConfig // 用于生产消息, key为exchange name, value为配置信息，包括: 类型
+	ConsumeExchanges map[string]ExchangeConfig // 用于消费信息, key为exchange name, value为配置信息，包括: 类型,topics,handler
 }
 
+// context.Context用于取消操作
+type MessageHandler func(context.Context, <-chan amqp.Delivery)
+
 type ExchangeConfig struct {
-	Type   string //  "direct", "fanout", "topic" and "headers"
-	Topics []string
+	Type    string         //  "topic|direct" "fanout" // TODO: topics must be empty when fanout
+	Handler MessageHandler // 消息处理handler
+	// cancelFunc context.CancelFunc
+
+	Topics []string // type为topic|direct时的topics
 }
 
 type RabbitMQ struct {
@@ -31,15 +40,22 @@ type RabbitMQ struct {
 	reconnectMux sync.Mutex
 	consumeMux   sync.Mutex
 
+	cancelFunc context.CancelFunc
+
 	logger *log.Logger
+	ctx    context.Context
 }
 
 func NewRabbitMQ(config Config) (*RabbitMQ, error) {
+	ctx, cancel := context.WithCancel(context.Background())
 	r := &RabbitMQ{
-		config:  config,
-		closeCh: make(chan struct{}),
-		logger:  log.New(os.Stdout, "|RMQ| ", log.LstdFlags),
+		config:     config,
+		closeCh:    make(chan struct{}),
+		logger:     log.New(os.Stdout, "|RMQ| ", log.LstdFlags),
+		ctx:        ctx,
+		cancelFunc: cancel,
 	}
+
 	err := r.connect()
 	if err != nil {
 		return nil, err
@@ -63,7 +79,26 @@ func (r *RabbitMQ) connect() error {
 		return err
 	}
 
-	for name, exchange := range r.config.Exchanges {
+	// 声明produce exchange
+	for name, config := range r.config.ProduceExchanges {
+		r.logger.Printf("Declare exchange: %s\n", name)
+		err = r.ch.ExchangeDeclare(
+			name,        // name
+			config.Type, // type
+			true,        // durable
+			false,       // auto-deleted
+			false,       // internal
+			false,       // no-wait
+			nil,         // arguments
+		)
+		if err != nil {
+			return err
+		}
+
+	}
+
+	// 声明consume exchange
+	for name, exchange := range r.config.ConsumeExchanges {
 		r.logger.Printf("Declare exchange: %s\n", name)
 		err = r.ch.ExchangeDeclare(
 			name,          // name
@@ -80,6 +115,20 @@ func (r *RabbitMQ) connect() error {
 	}
 
 	r.handleReconnect()
+
+	// 遍历consume exchange, 声明queue并绑定exchange
+	for name, exchange := range r.config.ConsumeExchanges {
+		if exchange.Handler == nil {
+			return fmt.Errorf("exchange %s handler is nil", name)
+		}
+		queue := fmt.Sprintf("queue_%s", name)
+		ch, err := r.Consume(r.ctx, name, queue, exchange.Topics)
+		if err != nil {
+			return err
+		}
+		go exchange.Handler(r.ctx, ch)
+	}
+
 	return nil
 }
 
@@ -124,6 +173,7 @@ func (r *RabbitMQ) Publish(exchange, routingKey string, body []byte) error {
 		},
 	)
 }
+
 func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topics []string) (<-chan amqp.Delivery, error) {
 	r.consumeMux.Lock()
 	defer r.consumeMux.Unlock()
@@ -189,10 +239,15 @@ func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topi
 	}
 
 	out := make(chan amqp.Delivery)
+	r.logger.Printf("+1")
 	r.wg.Add(1)
 	go func() {
-		defer r.wg.Done()
-		defer close(out)
+		defer func() {
+			defer r.wg.Done()
+			defer close(out)
+			r.logger.Printf("Consume %s stopped\n", queueName)
+			r.logger.Printf("-1")
+		}()
 		for {
 			select {
 			case msg, ok := <-msgs:
@@ -201,6 +256,7 @@ func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topi
 				}
 				out <- msg
 			case <-ctx.Done():
+				r.logger.Printf("Consume %s done\n", queueName)
 				return
 			}
 		}
@@ -209,8 +265,11 @@ func (r *RabbitMQ) Consume(ctx context.Context, exchange, queueName string, topi
 }
 
 func (r *RabbitMQ) Close() {
-	close(r.closeCh)
+	// close(r.closeCh)
+	r.logger.Println("Closing RabbitMQ connection...")
+	r.cancelFunc()
 	r.wg.Wait()
+	r.logger.Println("All consumers stopped")
 	if err := r.ch.Close(); err != nil {
 		r.logger.Printf("Failed to close channel: %s", err)
 	}
