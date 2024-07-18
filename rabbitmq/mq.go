@@ -46,6 +46,12 @@ type ExchangeConfig struct {
 	Type    string             //  "topic|direct" "fanout" // TODO: topics must be empty when fanout
 	Handler MessageHandlerFunc // 消息处理handler
 
+	// Durable   bool       // durable
+	// AutoDel   bool       // auto-deleted
+	// Internal  bool       // internal
+	// NoWait    bool       // no-wait
+	// Arguments amqp.Table // arguments
+
 	Topics []string // type为topic|direct时的topics
 }
 
@@ -186,20 +192,26 @@ func (r *RabbitMQ) reconnect() {
 
 func (r *RabbitMQ) handleReconnect() {
 	go func() {
-		for {
-			err := <-r.conn.NotifyClose(make(chan *amqp.Error))
-			if err != nil {
-				r.logger.Printf("Connection closed: %s", err)
-				r.reconnect()
-			}
-			// Exit the goroutine if the connection is closed
-			if r.conn.IsClosed() {
-				return
-			}
+		err := <-r.conn.NotifyClose(make(chan *amqp.Error))
+		if err != nil {
+			r.logger.Printf("Connection closed: %s", err)
+			r.reconnect()
 		}
+		// for {
+		// 	err := <-r.conn.NotifyClose(make(chan *amqp.Error))
+		// 	if err != nil {
+		// 		r.logger.Printf("Connection closed: %s", err)
+		// 		r.reconnect()
+		// 	}
+		// 	// Exit the goroutine if the connection is closed
+		// 	if r.conn.IsClosed() {
+		// 		return
+		// 	}
+		// }
 	}()
 }
 
+// TODO: mandatory immediate
 func (r *RabbitMQ) Publish(exchange, routingKey string, body []byte) error {
 	return r.ch.Publish(
 		exchange,   // exchange
@@ -278,14 +290,12 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 	}
 
 	out := make(chan amqp.Delivery)
-	r.logger.Printf("+1")
 	r.wg.Add(1)
 	go func() {
 		defer func() {
 			defer r.wg.Done()
 			defer close(out)
 			r.logger.Printf("Consume %s stopped\n", queueName)
-			r.logger.Printf("-1")
 		}()
 		for {
 			select {
@@ -304,7 +314,6 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 }
 
 func (r *RabbitMQ) Close() {
-	// close(r.closeCh)
 	r.logger.Println("Closing RabbitMQ connection...")
 	r.cancelFunc()
 	r.wg.Wait()
