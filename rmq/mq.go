@@ -1,4 +1,4 @@
-package rabbitmq
+package rmq
 
 import (
 	"context"
@@ -8,52 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rabbitmq/amqp091-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-type Config struct {
-	URL string
-	// Exchanges        map[string]ExchangeConfig
-	ReconnectSec int // 重连间隔
-
-	ProduceExchanges map[string]ExchangeConfig // 用于生产消息, key为exchange name, value为配置信息，包括: 类型
-	ConsumeExchanges map[string]ExchangeConfig // 用于消费信息, key为exchange name, value为配置信息，包括: 类型,topics,handler
-}
-
-// context.Context用于取消操作
-// type MessageHandler func(context.Context, <-chan amqp.Delivery)
-
-type MessageHandlerFunc func(msg amqp.Delivery)
-
-func messageHandler(ctx context.Context, msgs <-chan amqp091.Delivery, handler MessageHandlerFunc) {
-	for {
-		select {
-		case msg, ok := <-msgs:
-			if !ok {
-				log.Printf("Channel closed\n")
-				return
-			}
-			handler(msg)
-		case <-ctx.Done():
-			log.Printf("done,quit")
-			return
-		}
-	}
-}
-
-type ExchangeConfig struct {
-	Type    string             //  "topic|direct" "fanout" // TODO: topics must be empty when fanout
-	Handler MessageHandlerFunc // 消息处理handler
-
-	// Durable   bool       // durable
-	// AutoDel   bool       // auto-deleted
-	// Internal  bool       // internal
-	// NoWait    bool       // no-wait
-	// Arguments amqp.Table // arguments
-
-	Topics []string // type为topic|direct时的topics
-}
 
 type RabbitMQ struct {
 	config       Config
@@ -73,10 +29,10 @@ func NewRabbitMQ(url string, reconnect int) (*RabbitMQ, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &RabbitMQ{
 		config: Config{
-			URL:              url,
-			ReconnectSec:     reconnect,
-			ConsumeExchanges: make(map[string]ExchangeConfig),
-			ProduceExchanges: make(map[string]ExchangeConfig),
+			URL:          url,
+			ReconnectSec: reconnect,
+			Consumers:    make(map[string]ConsumerConfig),
+			Producers:    make(map[string]ProducerConfig),
 		},
 		// closeCh:    make(chan struct{}),
 		logger:     log.New(os.Stdout, "|RMQ| ", log.LstdFlags),
@@ -87,27 +43,29 @@ func NewRabbitMQ(url string, reconnect int) (*RabbitMQ, error) {
 	return r, nil
 }
 
-func (r *RabbitMQ) AddConsumer(exchangeName string, typ string, topics []string, handler MessageHandlerFunc) error {
-	exchange := ExchangeConfig{
-		Type:    typ,
-		Handler: handler,
-		Topics:  topics,
+func (r *RabbitMQ) AddConsumer(exchangeName string, topics []string, handler MessageHandlerFunc, exchangeOptions ExchangeOptions, queueOptions QueueOptions, consumeOptions ConsumeOptions) error {
+	config := ConsumerConfig{
+		ExchangeOptions: exchangeOptions,
+		Handler:         handler,
+		Topics:          topics,
+		QueueOptions:    queueOptions,
+		ConsumeOptions:  consumeOptions,
 	}
-	if exchange.Handler == nil {
+
+	if handler == nil {
 		return fmt.Errorf("exchange %s handler is nil", exchangeName)
 	}
 
-	r.config.ConsumeExchanges[exchangeName] = exchange
+	r.config.Consumers[exchangeName] = config
 	return nil
 }
 
-func (r *RabbitMQ) AddProducer(exchangeName string, typ string, topics []string) error {
-	exchange := ExchangeConfig{
-		Type:   typ,
-		Topics: topics,
+func (r *RabbitMQ) AddProducer(exchangeName string, exchangeOptions ExchangeOptions) error {
+	exchange := ProducerConfig{
+		ExchangeOptions: exchangeOptions,
 	}
 
-	r.config.ProduceExchanges[exchangeName] = exchange
+	r.config.Producers[exchangeName] = exchange
 	return nil
 }
 
@@ -128,16 +86,16 @@ func (r *RabbitMQ) Connect() error {
 	}
 
 	// 声明produce exchange
-	for name, config := range r.config.ProduceExchanges {
-		r.logger.Printf("Declare exchange: %s\n", name)
+	for exchangeName, producer := range r.config.Producers {
+		r.logger.Printf("Declare exchange: %s\n", exchangeName)
 		err = r.ch.ExchangeDeclare(
-			name,        // name
-			config.Type, // type
-			true,        // durable
-			false,       // auto-deleted
-			false,       // internal
-			false,       // no-wait
-			nil,         // arguments
+			exchangeName,                       // name
+			producer.ExchangeOptions.Type,      // type
+			producer.ExchangeOptions.Durable,   // durable
+			producer.ExchangeOptions.AutoDel,   // auto-deleted
+			producer.ExchangeOptions.Internal,  // internal
+			producer.ExchangeOptions.NoWait,    // no-wait
+			producer.ExchangeOptions.Arguments, // arguments
 		)
 		if err != nil {
 			return err
@@ -146,16 +104,16 @@ func (r *RabbitMQ) Connect() error {
 	}
 
 	// 声明consume exchange
-	for name, config := range r.config.ConsumeExchanges {
-		r.logger.Printf("Declare exchange: %s\n", name)
+	for exchangeName, consumer := range r.config.Consumers {
+		r.logger.Printf("Declare exchange: %s\n", exchangeName)
 		err = r.ch.ExchangeDeclare(
-			name,        // name
-			config.Type, // type
-			true,        // durable
-			false,       // auto-deleted
-			false,       // internal
-			false,       // no-wait
-			nil,         // arguments
+			exchangeName,                       // name
+			consumer.ExchangeOptions.Type,      // type
+			consumer.ExchangeOptions.Durable,   // durable
+			consumer.ExchangeOptions.AutoDel,   // auto-deleted
+			consumer.ExchangeOptions.Internal,  // internal
+			consumer.ExchangeOptions.NoWait,    // no-wait
+			consumer.ExchangeOptions.Arguments, // arguments
 		)
 		if err != nil {
 			return err
@@ -165,13 +123,12 @@ func (r *RabbitMQ) Connect() error {
 	r.handleReconnect()
 
 	// 遍历consume exchange, 声明queue并绑定exchange
-	for name, exchange := range r.config.ConsumeExchanges {
-		queue := fmt.Sprintf("queue_%s", name)
-		ch, err := r.consume(r.ctx, name, queue, exchange.Topics)
+	for exchangeName, consumer := range r.config.Consumers {
+		ch, err := r.consume(r.ctx, exchangeName, &consumer)
 		if err != nil {
 			return err
 		}
-		go messageHandler(r.ctx, ch, exchange.Handler)
+		go messageHandler(r.ctx, ch, consumer.Handler)
 	}
 
 	return nil
@@ -225,7 +182,7 @@ func (r *RabbitMQ) Publish(exchange, routingKey string, body []byte) error {
 	)
 }
 
-func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topics []string) (<-chan amqp.Delivery, error) {
+func (r *RabbitMQ) consume(ctx context.Context, exchangeName string, consumerConfig *ConsumerConfig) (<-chan amqp.Delivery, error) {
 	r.consumeMux.Lock()
 	defer r.consumeMux.Unlock()
 
@@ -235,14 +192,14 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 	retryInterval := time.Second * 2
 
 	for i := 0; i < maxRetries; i++ {
-		r.logger.Printf("Declare queue: %s\n", queueName)
+		r.logger.Printf("Declare queue: %s\n", consumerConfig.QueueOptions.Name)
 		queue, err = r.ch.QueueDeclare(
-			queueName, // name
-			true,      // durable
-			false,     // delete when unused
-			false,     // exclusive
-			false,     // no-wait
-			nil,       // arguments
+			consumerConfig.QueueOptions.Name,      // name
+			consumerConfig.QueueOptions.Durable,   // durable
+			consumerConfig.QueueOptions.AutoDel,   // delete when unused
+			consumerConfig.QueueOptions.Exclusive, // exclusive
+			consumerConfig.QueueOptions.NoWait,    // no-wait
+			consumerConfig.QueueOptions.Arguments, // arguments
 		)
 		if err == nil {
 			break
@@ -252,15 +209,15 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("declare queue: %s error: %w", queueName, err)
+		return nil, fmt.Errorf("declare queue: %s error: %w", consumerConfig.QueueOptions.Name, err)
 	}
 
-	for _, topic := range topics {
+	for _, topic := range consumerConfig.Topics {
 		for i := 0; i < maxRetries; i++ {
 			err = r.ch.QueueBind(
-				queue.Name, // queue name
-				topic,      // routing key
-				exchange,   // exchange
+				queue.Name,   // queue name
+				topic,        // routing key
+				exchangeName, // exchange
 				false,
 				nil,
 			)
@@ -277,13 +234,13 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 	}
 
 	msgs, err := r.ch.Consume(
-		queue.Name, // queue
-		"",         // consumer
-		false,      // auto-ack
-		false,      // exclusive
-		false,      // no-local
-		false,      // no-wait
-		nil,        // args
+		queue.Name,                              // queue
+		"",                                      // consumer
+		consumerConfig.ConsumeOptions.AutoAck,   // auto-ack
+		consumerConfig.ConsumeOptions.Exclusive, // exclusive
+		consumerConfig.ConsumeOptions.NoLocal,   // no-local
+		consumerConfig.ConsumeOptions.NoWait,    // no-wait
+		consumerConfig.ConsumeOptions.Arguments, // args
 	)
 	if err != nil {
 		return nil, fmt.Errorf("Consume error: %w", err)
@@ -295,7 +252,7 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 		defer func() {
 			defer r.wg.Done()
 			defer close(out)
-			r.logger.Printf("Consume %s stopped\n", queueName)
+			r.logger.Printf("Consume %s stopped\n", queue.Name)
 		}()
 		for {
 			select {
@@ -305,7 +262,7 @@ func (r *RabbitMQ) consume(ctx context.Context, exchange, queueName string, topi
 				}
 				out <- msg
 			case <-ctx.Done():
-				r.logger.Printf("Consume %s done\n", queueName)
+				r.logger.Printf("Consume %s done\n", queue.Name)
 				return
 			}
 		}

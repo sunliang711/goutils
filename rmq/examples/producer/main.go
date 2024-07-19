@@ -5,17 +5,28 @@ import (
 	"log"
 	"time"
 
-	"github.com/sunliang711/goutils/rabbitmq"
+	"github.com/sunliang711/goutils/rmq"
 )
 
 func main() {
 
-	url := "amqp://guest:guest@10.1.9.120:5673/"
-	rabbitMQ, err := rabbitmq.NewRabbitMQ(url, 5)
+	url := "amqp://guest:guest@10.1.9.66:5672/"
+	// 1. 构建实例
+	rabbitMQ, err := rmq.NewRabbitMQ(url, 5)
 	if err != nil {
 		log.Fatalf("Failed to connect to RabbitMQ: %s", err)
 	}
-	rabbitMQ.AddProducer("exchange001", "topic", []string{"topic1", "topic2"})
+
+	// 2. exchange参数
+	exchangeOptions := rmq.ExchangeOptions{
+		Type:    "topic",
+		Durable: true,
+	}
+
+	// 3. 添加生产者
+	rabbitMQ.AddProducer("exchange001", exchangeOptions)
+
+	// 4. 连接
 	err = rabbitMQ.Connect()
 	if err != nil {
 		log.Fatalf("Failed to connect to RabbitMQ: %s", err)
@@ -23,7 +34,7 @@ func main() {
 
 	i := 0
 	for {
-		// Publish example
+		// 5. 发送消息
 		log.Printf("Push message: %v\n", i)
 		err = rabbitMQ.Publish("exchange001", "topic1", []byte(fmt.Sprintf("Hello, World: %v", i)))
 		if err != nil {
