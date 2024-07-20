@@ -24,7 +24,7 @@ type ConsumerConfig struct {
 	ExchangeOptions ExchangeOptions
 
 	Handler        MessageHandlerFunc // 消息处理handler
-	Topics         []string           // type为topic|direct时的topics
+	Topic          string             // type为topic|direct时的topics
 	QueueOptions   QueueOptions
 	ConsumeOptions ConsumeOptions
 }

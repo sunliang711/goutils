@@ -34,7 +34,7 @@ func main() {
 	// 4. 消费参数
 	consumeOptions := rmq.ConsumeOptions{}
 	// 5. 添加生产者
-	rabbitMQ.AddConsumer("exchange001", []string{"topic1"}, func(msg amqp091.Delivery) {
+	rabbitMQ.AddConsumer("exchange001", "topic1", func(msg amqp091.Delivery) {
 		fmt.Printf("got message: %v\n", string(msg.Body))
 		msg.Ack(false)
 	}, exchangeOptions, queueOptions, consumeOptions)

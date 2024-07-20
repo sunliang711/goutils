@@ -43,11 +43,11 @@ func NewRabbitMQ(url string, reconnect int) (*RabbitMQ, error) {
 	return r, nil
 }
 
-func (r *RabbitMQ) AddConsumer(exchangeName string, topics []string, handler MessageHandlerFunc, exchangeOptions ExchangeOptions, queueOptions QueueOptions, consumeOptions ConsumeOptions) error {
+func (r *RabbitMQ) AddConsumer(exchangeName string, topic string, handler MessageHandlerFunc, exchangeOptions ExchangeOptions, queueOptions QueueOptions, consumeOptions ConsumeOptions) error {
 	config := ConsumerConfig{
 		ExchangeOptions: exchangeOptions,
 		Handler:         handler,
-		Topics:          topics,
+		Topic:           topic,
 		QueueOptions:    queueOptions,
 		ConsumeOptions:  consumeOptions,
 	}
@@ -154,17 +154,6 @@ func (r *RabbitMQ) handleReconnect() {
 			r.logger.Printf("Connection closed: %s", err)
 			r.reconnect()
 		}
-		// for {
-		// 	err := <-r.conn.NotifyClose(make(chan *amqp.Error))
-		// 	if err != nil {
-		// 		r.logger.Printf("Connection closed: %s", err)
-		// 		r.reconnect()
-		// 	}
-		// 	// Exit the goroutine if the connection is closed
-		// 	if r.conn.IsClosed() {
-		// 		return
-		// 	}
-		// }
 	}()
 }
 
@@ -212,25 +201,24 @@ func (r *RabbitMQ) consume(ctx context.Context, exchangeName string, consumerCon
 		return nil, fmt.Errorf("declare queue: %s error: %w", consumerConfig.QueueOptions.Name, err)
 	}
 
-	for _, topic := range consumerConfig.Topics {
-		for i := 0; i < maxRetries; i++ {
-			err = r.ch.QueueBind(
-				queue.Name,   // queue name
-				topic,        // routing key
-				exchangeName, // exchange
-				false,
-				nil,
-			)
-			if err == nil {
-				break
-			}
-			r.logger.Printf("QueueBind error: %v. Retrying in %v...\n", err, retryInterval)
-			time.Sleep(retryInterval)
+	// 绑定exchange和queue
+	for i := 0; i < maxRetries; i++ {
+		err = r.ch.QueueBind(
+			queue.Name,           // queue name
+			consumerConfig.Topic, // routing key
+			exchangeName,         // exchange
+			false,
+			nil,
+		)
+		if err == nil {
+			break
 		}
+		r.logger.Printf("QueueBind error: %v. Retrying in %v...\n", err, retryInterval)
+		time.Sleep(retryInterval)
+	}
 
-		if err != nil {
-			return nil, fmt.Errorf("QueueBind error: %w", err)
-		}
+	if err != nil {
+		return nil, fmt.Errorf("QueueBind error: %w", err)
 	}
 
 	msgs, err := r.ch.Consume(
