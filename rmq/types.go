@@ -10,9 +10,12 @@ import (
 type Config struct {
 	URL          string
 	ReconnectSec int // 重连间隔
+	CaCertBytes  []byte
+	ClientCert   []byte
+	ClientKey    []byte
 
-	Producers map[string]ProducerConfig // 用于生产消息, key为exchange name, value为配置信息，包括: 类型
-	Consumers map[string]ConsumerConfig // 用于消费信息, key为exchange name, value为配置信息，包括: 类型,topics,handler
+	Producers map[string]ProducerConfig   // 用于生产消息, key为exchange name, value为配置信息，包括: 类型
+	Consumers map[string][]ConsumerConfig // 用于消费信息, key为exchange name, value为配置信息，包括: 类型,topics,handler
 }
 
 type ProducerConfig struct {
@@ -21,7 +24,7 @@ type ProducerConfig struct {
 }
 
 type ConsumerConfig struct {
-	ExchangeOptions ExchangeOptions
+	// ExchangeOptions ExchangeOptions
 
 	Handler        MessageHandlerFunc // 消息处理handler
 	Topic          string             // type为topic|direct时的topics
